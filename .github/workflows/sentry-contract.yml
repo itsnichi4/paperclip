@@ -48,11 +48,12 @@ jobs:
 
       - name: Install workspace dependencies
         # Master owns the lockfile; PR verification can start before its refresh.
-        # Match the normal PR jobs and finish with a frozen install.
+        # Resolve like the normal PR jobs, but this narrow contract needs no
+        # dependency or workspace lifecycle scripts, including on the fast path.
         run: |
-          if ! pnpm install --frozen-lockfile; then
+          if ! pnpm install --frozen-lockfile --ignore-scripts; then
             pnpm install --resolution-only --ignore-scripts --no-frozen-lockfile
-            pnpm install --frozen-lockfile
+            pnpm install --frozen-lockfile --ignore-scripts
           fi
 
       - name: Install the audited optional SDK outside the workspace
