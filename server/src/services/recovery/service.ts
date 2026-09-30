@@ -4353,7 +4353,7 @@ export function recoveryService(
         continue;
       }
 
-      const participantLatestRunForRecovery =
+      const participantLatestIssueRun =
         issue.status === "in_review" && participantAgentId
           ? await getLatestIssueRunForAgent(
               issue.companyId,
@@ -4361,6 +4361,13 @@ export function recoveryService(
               participantAgentId,
             )
           : null;
+      // A review participant's run cancelled by its own stage hand-off belongs
+      // to the previous review round; it is never a recovery source.
+      const participantLatestRunForRecovery =
+        participantLatestIssueRun?.status === "cancelled" &&
+        participantLatestIssueRun.errorCode === "issue_reassigned"
+          ? null
+          : participantLatestIssueRun;
       const executionRecoverySource =
         issue.status === "in_review"
           ? participantLatestRunForRecovery
