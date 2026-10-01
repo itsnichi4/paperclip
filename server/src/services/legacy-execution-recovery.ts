@@ -13,7 +13,7 @@ export const LEGACY_RECOVERY_CAUSE = "legacy_execution_requires_reconciliation";
 
 /** Error families describe availability, not whether earlier actions happened. */
 export function legacyExecutionNeedsReconciliation(
-  run: Pick<Run, "runtimeMode" | "status" | "errorCode" | "resultJson"> & Partial<Pick<Run, "scheduledRetryAttempt" | "scheduledRetryReason" | "contextSnapshot">>,
+  run: Pick<Run, "runtimeMode" | "status" | "errorCode" | "resultJson"> & Partial<Pick<Run, "scheduledRetryAttempt" | "scheduledRetryReason" | "contextSnapshot" | "startedAt" | "processPid" | "processGroupId" | "nativeSessionId">>,
 ): boolean {
   if (
     run.runtimeMode === "native" ||
@@ -23,6 +23,10 @@ export function legacyExecutionNeedsReconciliation(
   // A fresh conversation turn lets the agent decide what remains. The retry
   // scheduler, not an action-outcome hold, owns the automatic attempt limit.
   if (hasConversationContinuationPolicy(run.resultJson)) return false;
+  // A run cancelled before it started did nothing: no provider, process or
+  // session ever existed. Rejected admissions keep their existing handling.
+  if (run.status === "cancelled" && run.startedAt === null && !run.processPid && !run.processGroupId &&
+      !run.nativeSessionId && run.errorCode !== "execution_reconciliation_required") return false;
   // Productive turn-budget continuation is not a failed provider session.
   if (normalizeMaxTurnStopReason(run.resultJson?.stopReason) ?? normalizeMaxTurnStopReason(run.errorCode)) return false;
   const evidence = run.resultJson?.executionRecovery as

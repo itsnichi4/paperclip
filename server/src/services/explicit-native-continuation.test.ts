@@ -640,6 +640,28 @@ const support = await getEmbeddedPostgresTestSupport();
     expect(source.resultJson).toBeNull();
   });
 
+  it("lets a board comment continue after a legacy run was cancelled before it started", async () => {
+    const f = await seed();
+    await db.update(agents).set({ adapterType: "claude_local" }).where(eq(agents.id, f.agentId));
+    await db.update(issues).set({ status: "todo" }).where(eq(issues.id, f.issueId));
+    await db.update(heartbeatRuns).set({ runtimeMode: "legacy", status: "cancelled", invocationSource: "automation",
+      errorCode: "issue_continuation_waiting_on_review", startedAt: null, processPid: null,
+      resultJson: { stopReason: "issue_continuation_waiting_on_review" } }).where(eq(heartbeatRuns.id, f.sourceRunId));
+    await db.delete(nativeRunFinalizations).where(eq(nativeRunFinalizations.runId, f.sourceRunId));
+    await db.update(issueRecoveryActions).set({ cause: "legacy_execution_requires_reconciliation" })
+      .where(eq(issueRecoveryActions.sourceIssueId, f.issueId));
+    expect(await getExecutionBlocker(db, f.companyId, f.issueId)).toMatchObject({ runId: f.sourceRunId });
+    // Occupy the agent slot: admission is real, but no provider should launch.
+    await db.insert(heartbeatRuns).values({ companyId: f.companyId, agentId: f.agentId, status: "running" });
+    await heartbeatService(db).wakeup(f.agentId, { source: "automation", triggerDetail: "system", reason: "issue_commented",
+      requestedByActorType: "user", requestedByActorId: "board", payload: { issueId: f.issueId, commentId: f.commentId },
+      contextSnapshot: { issueId: f.issueId, wakeCommentId: f.commentId } });
+    const runs = await db.select().from(heartbeatRuns).where(and(eq(heartbeatRuns.companyId, f.companyId), eq(heartbeatRuns.status, "queued")));
+    expect(runs).toHaveLength(1);
+    expect(runs[0].contextSnapshot).toMatchObject({ previousRunId: f.sourceRunId, explicitUserContinuation: { commentId: f.commentId } });
+    expect(await getExecutionBlocker(db, f.companyId, f.issueId)).toBeNull();
+  });
+
   it.each(["claim", "invocation"])("does not convert a known process run after switching the agent to Claude: %s", async evidence => {
     const f = await seed();
     await db.update(agents).set({ adapterType: "claude_local" }).where(eq(agents.id, f.agentId));

@@ -71,3 +71,16 @@ it("retries a busy AI subscription only when no provider work started", () => {
    expect(legacyExecutionNeedsReconciliation({ ...waiting, resultJson: {} })).toBe(true);
    expect(legacyExecutionNeedsReconciliation({ ...waiting, resultJson: { executionRecovery: { kind: "ai_connection_wait", providerWorkStarted: true } } })).toBe(true);
  });
+
+it("never holds a legacy run cancelled before it started", () => {
+  const unstarted = { runtimeMode: "legacy", status: "cancelled", errorCode: "issue_continuation_waiting_on_review",
+    startedAt: null, processPid: null, processGroupId: null, nativeSessionId: null,
+    resultJson: { stopReason: "issue_continuation_waiting_on_review" } };
+  expect(legacyExecutionNeedsReconciliation(unstarted)).toBe(false);
+  expect(legacyExecutionNeedsReconciliation({ ...unstarted, startedAt: new Date() })).toBe(true);
+  expect(legacyExecutionNeedsReconciliation({ ...unstarted, processPid: 123 })).toBe(true);
+  expect(legacyExecutionNeedsReconciliation({ ...unstarted, nativeSessionId: "session" })).toBe(true);
+  expect(legacyExecutionNeedsReconciliation({ ...unstarted, status: "failed" })).toBe(true);
+  // A rejected admission keeps its existing handling.
+  expect(legacyExecutionNeedsReconciliation({ ...unstarted, errorCode: "execution_reconciliation_required" })).toBe(true);
+});

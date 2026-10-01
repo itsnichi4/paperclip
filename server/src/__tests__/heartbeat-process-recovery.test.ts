@@ -8883,6 +8883,34 @@ describeEmbeddedPostgres("heartbeat orphaned process recovery", () => {
     expect(issue?.status).toBe("in_review");
   });
 
+  it("records no reconciliation hold for a legacy continuation cancelled before it started", async () => {
+    const { companyId, issueId, runId } = await seedStrandedIssueFixture({
+      status: "in_progress",
+      runStatus: "cancelled",
+      retryReason: "issue_continuation_needed",
+      runErrorCode: "issue_continuation_waiting_on_review",
+      resultJson: { stopReason: "issue_continuation_waiting_on_review" },
+    });
+    await db
+      .update(heartbeatRuns)
+      .set({ startedAt: null, invocationSource: "automation" })
+      .where(eq(heartbeatRuns.id, runId));
+
+    await heartbeatService(db).reconcileStrandedAssignedIssues();
+
+    const actions = await db
+      .select()
+      .from(issueRecoveryActions)
+      .where(
+        and(
+          eq(issueRecoveryActions.companyId, companyId),
+          eq(issueRecoveryActions.sourceIssueId, issueId),
+          eq(issueRecoveryActions.cause, "legacy_execution_requires_reconciliation"),
+        ),
+      );
+    expect(actions).toEqual([]);
+  });
+
   it("does not immediately recover a generic on-demand run used for an in-review agent API update", async () => {
     const { agentId, issueId, runId } = await seedInReviewParticipantRunFixture(
       {
